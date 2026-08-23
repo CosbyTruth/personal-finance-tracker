@@ -28,10 +28,10 @@ export default function LoginPage({ onAuthenticated, onShowRegister }) {
     <main className="auth-shell">
       <section className="auth-intro">
         <div className="brand"><span className="brand-mark">PF</span><span>Personal Finance</span></div>
-        <p className="eyebrow">MILESTONE 3 · TRANSACTIONS</p>
+        <p className="eyebrow">SECURE ACCESS</p>
         <h1>Know where your money stands.</h1>
-        <p className="lead">A private finance system for accounts, income, expenses, transfers, budgets and savings goals.</p>
-        <div className="feature-strip"><span>GHS first</span><span>Multi-currency ready</span><span>PostgreSQL</span></div>
+        <p className="lead">Sign in to your private finance workspace.</p>
+        <div className="feature-strip"><span>Strong passwords</span><span>GHS first</span><span>PostgreSQL</span></div>
       </section>
 
       <section className="auth-panel">

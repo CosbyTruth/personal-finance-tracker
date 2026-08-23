@@ -62,3 +62,9 @@ After Netlify reports a successful deploy, test in this order:
 ## If deployment fails
 
 Open Deploys > failed deploy > Deploy log and capture the first real error plus approximately 20 lines above/below it. Do not change multiple settings at once.
+
+## Authentication settings
+
+This version does not use email verification or Resend. Do not add RESEND/EMAIL_VERIFICATION variables to Netlify.
+
+New passwords are enforced at 8–15 characters with uppercase, lowercase, a number, and a special character.

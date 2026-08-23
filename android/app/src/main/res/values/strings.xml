@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Personal Finance Tracker</string>
+    <string name="title_activity_main">Personal Finance Tracker</string>
+    <string name="package_name">com.cosbby.personalfinance</string>
+    <string name="custom_url_scheme">com.cosbby.personalfinance</string>
+</resources>

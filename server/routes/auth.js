@@ -4,6 +4,7 @@ import { pool } from '../db.js'
 import { AUTH_COOKIE, authCookieOptions, createAuthToken } from '../auth-token.js'
 import { requireAuth } from '../middleware/auth.js'
 import { ensureDefaultFinanceCategories } from '../finance-defaults.js'
+import { validatePassword } from '../password-policy.js'
 
 const router = express.Router()
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -37,8 +38,10 @@ router.post('/register', async (req, res) => {
   if (!EMAIL_PATTERN.test(email) || email.length > 254) {
     return res.status(400).json({ message: 'Enter a valid email address' })
   }
-  if (password.length < 8 || password.length > 128) {
-    return res.status(400).json({ message: 'Password must be between 8 and 128 characters' })
+
+  const passwordResult = validatePassword(password)
+  if (!passwordResult.valid) {
+    return res.status(400).json({ message: passwordResult.message, code: 'WEAK_PASSWORD' })
   }
 
   const client = await pool.connect()
