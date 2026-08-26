@@ -17,15 +17,16 @@ export const DEFAULT_FINANCE_CATEGORIES = [
   ['Other Expense', 'Expense'],
 ]
 
-export async function ensureDefaultFinanceCategories(userId) {
-  if (!pool) return
+export async function ensureDefaultFinanceCategories(userId, database = pool) {
+  if (!database) return
 
-  for (const [name, categoryType] of DEFAULT_FINANCE_CATEGORIES) {
-    await pool.query(
-      `INSERT INTO finance_categories (user_id, name, category_type, is_default)
-       VALUES ($1, $2, $3, TRUE)
-       ON CONFLICT DO NOTHING`,
-      [userId, name, categoryType],
-    )
-  }
+  const names = DEFAULT_FINANCE_CATEGORIES.map(([name]) => name)
+  const types = DEFAULT_FINANCE_CATEGORIES.map(([, categoryType]) => categoryType)
+  await database.query(
+    `INSERT INTO finance_categories (user_id, name, category_type, is_default)
+     SELECT $1, seed.name, seed.category_type, TRUE
+     FROM UNNEST($2::text[], $3::text[]) AS seed(name, category_type)
+     ON CONFLICT DO NOTHING`,
+    [userId, names, types],
+  )
 }

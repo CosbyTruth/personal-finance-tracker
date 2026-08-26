@@ -1,7 +1,24 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth } from '../middleware/auth.js'
-import { ensureDefaultFinanceCategories } from '../finance-defaults.js'
+import {
+  createLedgerTransaction,
+  createFinancialAccount,
+  createTransaction,
+  LedgerDataError,
+  removeTransaction,
+  replaceFinancialAccount,
+  replaceTransaction,
+} from '../data/ledger-repository.js'
+import { withTransaction } from '../data/transaction-manager.js'
+import { advanceRecurringDate, recurringOccurrencesInRange } from '../domain/recurrence.js'
+import {
+  readAccountRows,
+  readBalanceSummary,
+  readCategories,
+  readMonthlySummary,
+  readTransactionRows,
+} from '../data/finance-read-repository.js'
 
 const router = express.Router()
 router.use(requireAuth)
@@ -115,95 +132,15 @@ function validateTransactionInput(body) {
 }
 
 async function getAccountRows(userId, includeArchived = true) {
-  const result = await pool.query(
-    `SELECT
-       a.id,
-       a.name,
-       a.account_type,
-       a.currency,
-       a.opening_balance,
-       a.is_archived,
-       a.created_at,
-       a.updated_at,
-       COUNT(t.id)::int AS transaction_count,
-       (
-         a.opening_balance + COALESCE(
-           SUM(
-             CASE
-               WHEN t.transaction_type = 'Income' AND t.account_id = a.id THEN t.amount
-               WHEN t.transaction_type = 'Expense' AND t.account_id = a.id THEN -t.amount
-               WHEN t.transaction_type = 'Transfer' AND t.account_id = a.id THEN -t.amount
-               WHEN t.transaction_type = 'Transfer' AND t.transfer_account_id = a.id THEN t.amount
-               ELSE 0
-             END
-           ),
-           0
-         )
-       )::numeric(18,2) AS current_balance
-     FROM finance_accounts a
-     LEFT JOIN finance_transactions t
-       ON t.user_id = a.user_id
-      AND (t.account_id = a.id OR t.transfer_account_id = a.id)
-     WHERE a.user_id = $1
-       AND ($2::boolean = TRUE OR a.is_archived = FALSE)
-     GROUP BY a.id
-     ORDER BY a.is_archived ASC, LOWER(a.name) ASC`,
-    [userId, includeArchived],
-  )
-
-  return result.rows
+  return readAccountRows(userId, includeArchived)
 }
 
 async function getBalanceSummary(userId) {
-  const result = await pool.query(
-    `WITH movements AS (
-       SELECT account_id,
-              CASE
-                WHEN transaction_type = 'Income' THEN amount
-                WHEN transaction_type = 'Expense' THEN -amount
-                WHEN transaction_type = 'Transfer' THEN -amount
-                ELSE 0
-              END AS delta
-       FROM finance_transactions
-       WHERE user_id = $1
-
-       UNION ALL
-
-       SELECT transfer_account_id AS account_id, amount AS delta
-       FROM finance_transactions
-       WHERE user_id = $1
-         AND transaction_type = 'Transfer'
-         AND transfer_account_id IS NOT NULL
-     ),
-     account_balances AS (
-       SELECT
-         a.currency,
-         (a.opening_balance + COALESCE(SUM(m.delta), 0))::numeric(18,2) AS current_balance
-       FROM finance_accounts a
-       LEFT JOIN movements m ON m.account_id = a.id
-       WHERE a.user_id = $1 AND a.is_archived = FALSE
-       GROUP BY a.id
-     )
-     SELECT currency, SUM(current_balance)::numeric(18,2) AS balance
-     FROM account_balances
-     GROUP BY currency
-     ORDER BY currency`,
-    [userId],
-  )
-
-  return result.rows
+  return readBalanceSummary(userId)
 }
 
 async function getCategories(userId) {
-  await ensureDefaultFinanceCategories(userId)
-  const result = await pool.query(
-    `SELECT id, name, category_type, is_default, created_at
-     FROM finance_categories
-     WHERE user_id = $1
-     ORDER BY category_type ASC, is_default DESC, LOWER(name) ASC`,
-    [userId],
-  )
-  return result.rows
+  return readCategories(userId)
 }
 
 async function loadOwnedAccount(userId, accountId, { activeOnly = false } = {}) {
@@ -215,38 +152,6 @@ async function loadOwnedAccount(userId, accountId, { activeOnly = false } = {}) 
     [accountId, userId],
   )
   return result.rows[0] || null
-}
-
-async function validateTransactionRelations(userId, transaction, { requireActive = true } = {}) {
-  const source = await loadOwnedAccount(userId, transaction.accountId, { activeOnly: requireActive })
-  if (!source) return { error: 'The selected account was not found or is archived.' }
-
-  let category = null
-  let destination = null
-
-  if (transaction.transactionType === 'Transfer') {
-    destination = await loadOwnedAccount(userId, transaction.transferAccountId, { activeOnly: requireActive })
-    if (!destination) return { error: 'The destination account was not found or is archived.' }
-    if (destination.id === source.id) return { error: 'A transfer must use two different accounts.' }
-    if (destination.currency !== source.currency) {
-      return { error: 'Milestone 3 supports transfers only between accounts with the same currency. FX transfers will be added later.' }
-    }
-  } else {
-    const categoryResult = await pool.query(
-      `SELECT id, name, category_type
-       FROM finance_categories
-       WHERE id = $1 AND user_id = $2
-       LIMIT 1`,
-      [transaction.categoryId, userId],
-    )
-    category = categoryResult.rows[0] || null
-    if (!category) return { error: 'The selected category was not found.' }
-    if (category.category_type !== transaction.transactionType) {
-      return { error: `${transaction.transactionType} transactions must use a ${transaction.transactionType.toLowerCase()} category.` }
-    }
-  }
-
-  return { value: { source, destination, category, currency: source.currency } }
 }
 
 function mapTransactionFilters(query) {
@@ -264,102 +169,17 @@ function mapTransactionFilters(query) {
 }
 
 async function getTransactionRows(userId, query = {}) {
-  const filters = mapTransactionFilters(query)
-  const params = [userId]
-  const where = ['t.user_id = $1']
-
-  if (filters.type) {
-    params.push(filters.type)
-    where.push(`t.transaction_type = $${params.length}`)
-  }
-  if (filters.accountId) {
-    params.push(filters.accountId)
-    where.push(`(t.account_id = $${params.length} OR t.transfer_account_id = $${params.length})`)
-  }
-  if (filters.categoryId) {
-    params.push(filters.categoryId)
-    where.push(`t.category_id = $${params.length}`)
-  }
-  if (filters.from) {
-    params.push(filters.from)
-    where.push(`t.transaction_date >= $${params.length}`)
-  }
-  if (filters.to) {
-    params.push(filters.to)
-    where.push(`t.transaction_date <= $${params.length}`)
-  }
-  if (filters.search) {
-    params.push(`%${filters.search}%`)
-    where.push(`(t.description ILIKE $${params.length} OR t.notes ILIKE $${params.length})`)
-  }
-
-  const result = await pool.query(
-    `SELECT
-       t.id,
-       t.transaction_type,
-       t.account_id,
-       t.category_id,
-       t.transfer_account_id,
-       t.amount,
-       t.currency,
-       t.description,
-       t.notes,
-       t.transaction_date,
-       t.created_at,
-       t.updated_at,
-       a.name AS account_name,
-       a.account_type,
-       a.is_archived AS account_archived,
-       c.name AS category_name,
-       c.category_type,
-       ta.name AS transfer_account_name,
-       ta.account_type AS transfer_account_type,
-       ta.is_archived AS transfer_account_archived
-     FROM finance_transactions t
-     JOIN finance_accounts a
-       ON a.id = t.account_id AND a.user_id = t.user_id
-     LEFT JOIN finance_categories c
-       ON c.id = t.category_id AND c.user_id = t.user_id
-     LEFT JOIN finance_accounts ta
-       ON ta.id = t.transfer_account_id AND ta.user_id = t.user_id
-     WHERE ${where.join(' AND ')}
-     ORDER BY t.transaction_date DESC, t.created_at DESC
-     LIMIT 500`,
-    params,
-  )
-
-  return result.rows
+  return readTransactionRows(userId, mapTransactionFilters(query))
 }
 
 async function getMonthlySummary(userId) {
-  const result = await pool.query(
-    `SELECT
-       currency,
-       COALESCE(SUM(CASE WHEN transaction_type = 'Income' THEN amount ELSE 0 END), 0)::numeric(18,2) AS income,
-       COALESCE(SUM(CASE WHEN transaction_type = 'Expense' THEN amount ELSE 0 END), 0)::numeric(18,2) AS expenses,
-       (
-         COALESCE(SUM(CASE WHEN transaction_type = 'Income' THEN amount ELSE 0 END), 0)
-         - COALESCE(SUM(CASE WHEN transaction_type = 'Expense' THEN amount ELSE 0 END), 0)
-       )::numeric(18,2) AS net_cash_flow,
-       COUNT(*) FILTER (WHERE transaction_type IN ('Income', 'Expense'))::int AS cashflow_transactions,
-       COUNT(*) FILTER (WHERE transaction_type = 'Transfer')::int AS transfers
-     FROM finance_transactions
-     WHERE user_id = $1
-       AND transaction_date >= DATE_TRUNC('month', CURRENT_DATE)::date
-       AND transaction_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')::date
-     GROUP BY currency
-     ORDER BY currency`,
-    [userId],
-  )
-
-  return result.rows
+  return readMonthlySummary(userId)
 }
 
 router.get('/foundation', async (req, res) => {
   if (!pool) return res.status(503).json({ message: 'Database is not configured' })
 
   try {
-    await ensureDefaultFinanceCategories(req.auth.userId)
     const accounts = await getAccountRows(req.auth.userId, true)
     const balances = await getBalanceSummary(req.auth.userId)
     const monthly = await getMonthlySummary(req.auth.userId)
@@ -378,7 +198,7 @@ router.get('/foundation', async (req, res) => {
       balances,
       monthly,
       defaultCurrency: 'GHS',
-      milestone: 7,
+      ledgerVersion: 1,
       ready: true,
     })
   } catch (error) {
@@ -414,30 +234,14 @@ router.post('/accounts', async (req, res) => {
   const { name, accountType, currency, openingBalance } = validation.value
 
   try {
-    const duplicate = await pool.query(
-      `SELECT id, is_archived FROM finance_accounts
-       WHERE user_id = $1 AND LOWER(name) = LOWER($2)
-       LIMIT 1`,
-      [req.auth.userId, name],
-    )
-
-    if (duplicate.rowCount) {
-      return res.status(409).json({
-        message: duplicate.rows[0].is_archived
-          ? 'An archived account already uses this name. Restore or rename that account first.'
-          : 'An account with this name already exists.',
-      })
-    }
-
-    const result = await pool.query(
-      `INSERT INTO finance_accounts (user_id, name, account_type, currency, opening_balance)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, account_type, currency, opening_balance, is_archived, created_at, updated_at`,
-      [req.auth.userId, name, accountType, currency, openingBalance],
-    )
-
-    return res.status(201).json({ account: { ...result.rows[0], current_balance: result.rows[0].opening_balance, transaction_count: 0 } })
+    const result = await createFinancialAccount({
+      userId: req.auth.userId,
+      account: { name, accountType, currency, openingBalance },
+    })
+    return res.status(201).json({ account: { ...result, current_balance: result.opening_balance, transaction_count: 0 } })
   } catch (error) {
+    if (error instanceof LedgerDataError) return res.status(error.status).json({ message: error.message, code: error.code })
+    if (error.code === '23505') return res.status(409).json({ message: 'An account with this name already exists.' })
     console.error('Account creation failed:', error)
     return res.status(500).json({ message: 'Could not create account' })
   }
@@ -451,51 +255,18 @@ router.put('/accounts/:id', async (req, res) => {
   const { name, accountType, currency, openingBalance } = validation.value
 
   try {
-    const currentResult = await pool.query(
-      `SELECT
-         a.*,
-         (SELECT COUNT(*)::int FROM finance_transactions t
-          WHERE t.user_id = a.user_id AND (t.account_id = a.id OR t.transfer_account_id = a.id)) AS transaction_count
-       FROM finance_accounts a
-       WHERE a.id = $1 AND a.user_id = $2`,
-      [req.params.id, req.auth.userId],
-    )
-
-    if (!currentResult.rowCount) return res.status(404).json({ message: 'Account not found' })
-    const current = currentResult.rows[0]
-
-    const duplicate = await pool.query(
-      `SELECT id FROM finance_accounts
-       WHERE user_id = $1 AND LOWER(name) = LOWER($2) AND id <> $3
-       LIMIT 1`,
-      [req.auth.userId, name, req.params.id],
-    )
-    if (duplicate.rowCount) return res.status(409).json({ message: 'Another account already uses this name.' })
-
-    if (current.transaction_count > 0) {
-      if (current.currency !== currency) {
-        return res.status(409).json({ message: 'Currency cannot be changed after transactions exist on an account.' })
-      }
-      if (Number(current.opening_balance) !== Number(openingBalance)) {
-        return res.status(409).json({ message: 'Opening balance cannot be changed after transactions exist on an account.' })
-      }
-    }
-
-    await pool.query(
-      `UPDATE finance_accounts
-       SET name = $1,
-           account_type = $2,
-           currency = $3,
-           opening_balance = $4,
-           updated_at = NOW()
-       WHERE id = $5 AND user_id = $6`,
-      [name, accountType, currency, openingBalance, req.params.id, req.auth.userId],
-    )
+    await replaceFinancialAccount({
+      userId: req.auth.userId,
+      accountId: req.params.id,
+      account: { name, accountType, currency, openingBalance },
+    })
 
     const accounts = await getAccountRows(req.auth.userId, true)
     const account = accounts.find((item) => String(item.id) === String(req.params.id))
     return res.json({ account })
   } catch (error) {
+    if (error instanceof LedgerDataError) return res.status(error.status).json({ message: error.message, code: error.code })
+    if (error.code === '23505') return res.status(409).json({ message: 'Another account already uses this name.' })
     console.error('Account update failed:', error)
     return res.status(500).json({ message: 'Could not update account' })
   }
@@ -505,21 +276,24 @@ router.post('/accounts/:id/archive', async (req, res) => {
   if (!pool) return res.status(503).json({ message: 'Database is not configured' })
 
   try {
-    const result = await pool.query(
-      `UPDATE finance_accounts
-       SET is_archived = TRUE, updated_at = NOW()
-       WHERE id = $1 AND user_id = $2 AND is_archived = FALSE
-       RETURNING id`,
-      [req.params.id, req.auth.userId],
-    )
-    if (!result.rowCount) return res.status(404).json({ message: 'Active account not found' })
-    await pool.query(
-      `UPDATE finance_recurring_items SET is_active = FALSE, updated_at = NOW()
-       WHERE user_id = $1 AND account_id = $2 AND is_active = TRUE`,
-      [req.auth.userId, req.params.id],
-    )
+    await withTransaction(async (client) => {
+      const result = await client.query(
+        `UPDATE finance_accounts
+         SET is_archived=TRUE, updated_at=NOW()
+         WHERE id=$1 AND user_id=$2 AND is_archived=FALSE
+         RETURNING id`,
+        [req.params.id, req.auth.userId],
+      )
+      if (!result.rowCount) throw new LedgerDataError('Active account not found.', 404, 'NOT_FOUND')
+      await client.query(
+        `UPDATE finance_recurring_items SET is_active=FALSE, updated_at=NOW()
+         WHERE user_id=$1 AND account_id=$2 AND is_active=TRUE`,
+        [req.auth.userId, req.params.id],
+      )
+    })
     return res.json({ ok: true })
   } catch (error) {
+    if (error instanceof LedgerDataError) return res.status(error.status).json({ message: error.message, code: error.code })
     console.error('Account archive failed:', error)
     return res.status(500).json({ message: 'Could not archive account' })
   }
@@ -640,36 +414,26 @@ router.post('/transactions', async (req, res) => {
   if (validation.error) return res.status(400).json({ message: validation.error })
 
   try {
-    await ensureDefaultFinanceCategories(req.auth.userId)
-    const relations = await validateTransactionRelations(req.auth.userId, validation.value, { requireActive: true })
-    if (relations.error) return res.status(400).json({ message: relations.error })
-
-    const transaction = validation.value
-    const result = await pool.query(
-      `INSERT INTO finance_transactions (
-         user_id, account_id, transaction_type, category_id, transfer_account_id,
-         amount, currency, description, notes, transaction_date
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING id`,
-      [
-        req.auth.userId,
-        transaction.accountId,
-        transaction.transactionType,
-        transaction.categoryId,
-        transaction.transferAccountId,
-        transaction.amount,
-        relations.value.currency,
-        transaction.description,
-        transaction.notes,
-        transaction.transactionDate,
-      ],
-    )
+    const rawKey = String(req.get('Idempotency-Key') || '').trim()
+    if (rawKey && !/^[A-Za-z0-9:_./-]{1,160}$/.test(rawKey)) {
+      return res.status(400).json({ message: 'Idempotency-Key contains unsupported characters.' })
+    }
+    const result = await createTransaction({
+      userId: req.auth.userId,
+      transaction: validation.value,
+      idempotencyKey: rawKey || null,
+    })
 
     const rows = await getTransactionRows(req.auth.userId, {})
-    const created = rows.find((row) => String(row.id) === String(result.rows[0].id))
-    return res.status(201).json({ transaction: created })
+    const created = rows.find((row) => String(row.id) === String(result.id))
+    return res.status(result.replayed ? 200 : 201).json({ transaction: created, replayed: result.replayed })
   } catch (error) {
+    if (error instanceof LedgerDataError) {
+      return res.status(error.status).json({ message: error.message, code: error.code })
+    }
+    if (error.code === '23505') {
+      return res.status(409).json({ message: 'This transaction request has already been processed.' })
+    }
     console.error('Transaction creation failed:', error)
     return res.status(500).json({ message: 'Could not create transaction' })
   }
@@ -681,48 +445,19 @@ router.put('/transactions/:id', async (req, res) => {
   if (validation.error) return res.status(400).json({ message: validation.error })
 
   try {
-    const existing = await pool.query(
-      `SELECT id FROM finance_transactions WHERE id = $1 AND user_id = $2 LIMIT 1`,
-      [req.params.id, req.auth.userId],
-    )
-    if (!existing.rowCount) return res.status(404).json({ message: 'Transaction not found' })
-
-    const relations = await validateTransactionRelations(req.auth.userId, validation.value, { requireActive: false })
-    if (relations.error) return res.status(400).json({ message: relations.error })
-
-    const transaction = validation.value
-    await pool.query(
-      `UPDATE finance_transactions
-       SET account_id = $1,
-           transaction_type = $2,
-           category_id = $3,
-           transfer_account_id = $4,
-           amount = $5,
-           currency = $6,
-           description = $7,
-           notes = $8,
-           transaction_date = $9,
-           updated_at = NOW()
-       WHERE id = $10 AND user_id = $11`,
-      [
-        transaction.accountId,
-        transaction.transactionType,
-        transaction.categoryId,
-        transaction.transferAccountId,
-        transaction.amount,
-        relations.value.currency,
-        transaction.description,
-        transaction.notes,
-        transaction.transactionDate,
-        req.params.id,
-        req.auth.userId,
-      ],
-    )
+    await replaceTransaction({
+      userId: req.auth.userId,
+      transactionId: req.params.id,
+      transaction: validation.value,
+    })
 
     const rows = await getTransactionRows(req.auth.userId, {})
     const updated = rows.find((row) => String(row.id) === String(req.params.id))
     return res.json({ transaction: updated })
   } catch (error) {
+    if (error instanceof LedgerDataError) {
+      return res.status(error.status).json({ message: error.message, code: error.code })
+    }
     console.error('Transaction update failed:', error)
     return res.status(500).json({ message: 'Could not update transaction' })
   }
@@ -731,15 +466,12 @@ router.put('/transactions/:id', async (req, res) => {
 router.delete('/transactions/:id', async (req, res) => {
   if (!pool) return res.status(503).json({ message: 'Database is not configured' })
   try {
-    const result = await pool.query(
-      `DELETE FROM finance_transactions
-       WHERE id = $1 AND user_id = $2
-       RETURNING id`,
-      [req.params.id, req.auth.userId],
-    )
-    if (!result.rowCount) return res.status(404).json({ message: 'Transaction not found' })
+    await removeTransaction({ userId: req.auth.userId, transactionId: req.params.id })
     return res.status(204).end()
   } catch (error) {
+    if (error instanceof LedgerDataError) {
+      return res.status(error.status).json({ message: error.message, code: error.code })
+    }
     console.error('Transaction deletion failed:', error)
     return res.status(500).json({ message: 'Could not delete transaction' })
   }
@@ -787,7 +519,6 @@ async function loadExpenseCategory(userId, categoryId) {
 }
 
 async function getBudgetOverview(userId, monthInput, currencyInput) {
-  await ensureDefaultFinanceCategories(userId)
   const budgetMonth = normalizeBudgetMonth(monthInput || currentBudgetMonth())
   const currency = cleanCurrency(currencyInput || 'GHS')
   if (!budgetMonth) throw new Error('INVALID_BUDGET_MONTH')
@@ -1021,26 +752,26 @@ function validateGoalEntryInput(body) {
   return { value: { entryType, amount, contributionDate, notes } }
 }
 
-async function loadOwnedGoal(userId, goalId) {
-  const result = await pool.query(
+async function loadOwnedGoal(userId, goalId, database = pool, { forUpdate = false } = {}) {
+  const result = await database.query(
     `SELECT id, user_id, name, goal_type, currency, target_amount, starting_amount,
             target_date, priority, notes, is_archived, created_at, updated_at
      FROM finance_savings_goals
      WHERE id = $1 AND user_id = $2
-     LIMIT 1`,
+     LIMIT 1 ${forUpdate ? 'FOR UPDATE' : ''}`,
     [goalId, userId],
   )
   return result.rows[0] || null
 }
 
-async function goalCurrentSaved(userId, goalId, excludeEntryId = null) {
+async function goalCurrentSaved(userId, goalId, excludeEntryId = null, database = pool) {
   const params = [userId, goalId]
   let exclusion = ''
   if (excludeEntryId) {
     params.push(excludeEntryId)
     exclusion = `AND e.id <> $${params.length}`
   }
-  const result = await pool.query(
+  const result = await database.query(
     `SELECT (
        g.starting_amount
        + COALESCE(SUM(CASE WHEN e.entry_type = 'Contribution' THEN e.amount ELSE -e.amount END), 0)
@@ -1254,24 +985,28 @@ router.post('/goals/:id/entries', async (req, res) => {
   if (validation.error) return res.status(400).json({ message: validation.error })
 
   try {
-    const goal = await loadOwnedGoal(req.auth.userId, req.params.id)
-    if (!goal) return res.status(404).json({ message: 'Savings goal not found' })
-    if (goal.is_archived) return res.status(409).json({ message: 'Restore this goal before changing its progress.' })
     const entry = validation.value
-    if (entry.entryType === 'Withdrawal') {
-      const current = await goalCurrentSaved(req.auth.userId, req.params.id)
-      if (Number(entry.amount) > current) return res.status(409).json({ message: 'Withdrawal cannot exceed the amount currently saved for this goal.' })
-    }
-
-    await pool.query(
-      `INSERT INTO finance_goal_contributions (user_id, goal_id, entry_type, amount, contribution_date, notes)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [req.auth.userId, req.params.id, entry.entryType, entry.amount, entry.contributionDate, entry.notes],
-    )
+    await withTransaction(async (client) => {
+      const goal = await loadOwnedGoal(req.auth.userId, req.params.id, client, { forUpdate: true })
+      if (!goal) throw new LedgerDataError('Savings goal not found.', 404, 'NOT_FOUND')
+      if (goal.is_archived) throw new LedgerDataError('Restore this goal before changing its progress.', 409, 'GOAL_ARCHIVED')
+      if (entry.entryType === 'Withdrawal') {
+        const current = await goalCurrentSaved(req.auth.userId, req.params.id, null, client)
+        if (Number(entry.amount) > current) {
+          throw new LedgerDataError('Withdrawal cannot exceed the amount currently saved for this goal.', 409, 'INSUFFICIENT_GOAL_BALANCE')
+        }
+      }
+      await client.query(
+        `INSERT INTO finance_goal_contributions (user_id, goal_id, entry_type, amount, contribution_date, notes)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [req.auth.userId, req.params.id, entry.entryType, entry.amount, entry.contributionDate, entry.notes],
+      )
+    })
     const overview = await getGoalOverview(req.auth.userId, true)
     const updated = overview.goals.find((item) => String(item.id) === String(req.params.id))
     return res.status(201).json({ goal: updated, summary: overview.summary })
   } catch (error) {
+    if (error instanceof LedgerDataError) return res.status(error.status).json({ message: error.message, code: error.code })
     console.error('Goal contribution creation failed:', error)
     return res.status(500).json({ message: 'Could not record goal progress' })
   }
@@ -1283,30 +1018,34 @@ router.put('/goals/:goalId/entries/:entryId', async (req, res) => {
   if (validation.error) return res.status(400).json({ message: validation.error })
 
   try {
-    const owned = await pool.query(
-      `SELECT e.id, e.goal_id
-       FROM finance_goal_contributions e
-       JOIN finance_savings_goals g ON g.id=e.goal_id AND g.user_id=e.user_id
-       WHERE e.id=$1 AND e.goal_id=$2 AND e.user_id=$3
-       LIMIT 1`,
-      [req.params.entryId, req.params.goalId, req.auth.userId],
-    )
-    if (!owned.rowCount) return res.status(404).json({ message: 'Goal progress entry not found' })
     const entry = validation.value
-    const base = await goalCurrentSaved(req.auth.userId, req.params.goalId, req.params.entryId)
-    const projected = entry.entryType === 'Contribution' ? base + Number(entry.amount) : base - Number(entry.amount)
-    if (projected < 0) return res.status(409).json({ message: 'This change would make the goal allocation negative. Adjust later withdrawals first.' })
-
-    await pool.query(
-      `UPDATE finance_goal_contributions
-       SET entry_type=$1, amount=$2, contribution_date=$3, notes=$4, updated_at=NOW()
-       WHERE id=$5 AND goal_id=$6 AND user_id=$7`,
-      [entry.entryType, entry.amount, entry.contributionDate, entry.notes, req.params.entryId, req.params.goalId, req.auth.userId],
-    )
+    await withTransaction(async (client) => {
+      const goal = await loadOwnedGoal(req.auth.userId, req.params.goalId, client, { forUpdate: true })
+      if (!goal) throw new LedgerDataError('Savings goal not found.', 404, 'NOT_FOUND')
+      const owned = await client.query(
+        `SELECT id FROM finance_goal_contributions
+         WHERE id=$1 AND goal_id=$2 AND user_id=$3
+         FOR UPDATE`,
+        [req.params.entryId, req.params.goalId, req.auth.userId],
+      )
+      if (!owned.rowCount) throw new LedgerDataError('Goal progress entry not found.', 404, 'NOT_FOUND')
+      const base = await goalCurrentSaved(req.auth.userId, req.params.goalId, req.params.entryId, client)
+      const projected = entry.entryType === 'Contribution' ? base + Number(entry.amount) : base - Number(entry.amount)
+      if (projected < 0) {
+        throw new LedgerDataError('This change would make the goal allocation negative. Adjust later withdrawals first.', 409, 'NEGATIVE_GOAL_BALANCE')
+      }
+      await client.query(
+        `UPDATE finance_goal_contributions
+         SET entry_type=$1, amount=$2, contribution_date=$3, notes=$4, updated_at=NOW()
+         WHERE id=$5 AND goal_id=$6 AND user_id=$7`,
+        [entry.entryType, entry.amount, entry.contributionDate, entry.notes, req.params.entryId, req.params.goalId, req.auth.userId],
+      )
+    })
     const overview = await getGoalOverview(req.auth.userId, true)
     const updated = overview.goals.find((item) => String(item.id) === String(req.params.goalId))
     return res.json({ goal: updated, summary: overview.summary })
   } catch (error) {
+    if (error instanceof LedgerDataError) return res.status(error.status).json({ message: error.message, code: error.code })
     console.error('Goal progress update failed:', error)
     return res.status(500).json({ message: 'Could not update goal progress' })
   }
@@ -1315,25 +1054,30 @@ router.put('/goals/:goalId/entries/:entryId', async (req, res) => {
 router.delete('/goals/:goalId/entries/:entryId', async (req, res) => {
   if (!pool) return res.status(503).json({ message: 'Database is not configured' })
   try {
-    const existing = await pool.query(
-      `SELECT id, entry_type FROM finance_goal_contributions
-       WHERE id=$1 AND goal_id=$2 AND user_id=$3
-       LIMIT 1`,
-      [req.params.entryId, req.params.goalId, req.auth.userId],
-    )
-    if (!existing.rowCount) return res.status(404).json({ message: 'Goal progress entry not found' })
-    const projected = await goalCurrentSaved(req.auth.userId, req.params.goalId, req.params.entryId)
-    if (projected < 0) return res.status(409).json({ message: 'Deleting this contribution would make the goal allocation negative. Adjust later withdrawals first.' })
-
-    await pool.query(
-      `DELETE FROM finance_goal_contributions
-       WHERE id=$1 AND goal_id=$2 AND user_id=$3`,
-      [req.params.entryId, req.params.goalId, req.auth.userId],
-    )
+    await withTransaction(async (client) => {
+      const goal = await loadOwnedGoal(req.auth.userId, req.params.goalId, client, { forUpdate: true })
+      if (!goal) throw new LedgerDataError('Savings goal not found.', 404, 'NOT_FOUND')
+      const existing = await client.query(
+        `SELECT id FROM finance_goal_contributions
+         WHERE id=$1 AND goal_id=$2 AND user_id=$3
+         FOR UPDATE`,
+        [req.params.entryId, req.params.goalId, req.auth.userId],
+      )
+      if (!existing.rowCount) throw new LedgerDataError('Goal progress entry not found.', 404, 'NOT_FOUND')
+      const projected = await goalCurrentSaved(req.auth.userId, req.params.goalId, req.params.entryId, client)
+      if (projected < 0) {
+        throw new LedgerDataError('Deleting this contribution would make the goal allocation negative. Adjust later withdrawals first.', 409, 'NEGATIVE_GOAL_BALANCE')
+      }
+      await client.query(
+        'DELETE FROM finance_goal_contributions WHERE id=$1 AND goal_id=$2 AND user_id=$3',
+        [req.params.entryId, req.params.goalId, req.auth.userId],
+      )
+    })
     const overview = await getGoalOverview(req.auth.userId, true)
     const updated = overview.goals.find((item) => String(item.id) === String(req.params.goalId))
     return res.json({ goal: updated, summary: overview.summary })
   } catch (error) {
+    if (error instanceof LedgerDataError) return res.status(error.status).json({ message: error.message, code: error.code })
     console.error('Goal progress deletion failed:', error)
     return res.status(500).json({ message: 'Could not delete goal progress entry' })
   }
@@ -1367,33 +1111,8 @@ function validateRecurringInput(body) {
   return { value: { name, transactionType, accountId, categoryId, amount, frequency, nextDueDate, endDate, notes } }
 }
 
-function daysInMonthUtc(year, monthIndex) {
-  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate()
-}
-
-function addMonthsClamped(date, months) {
-  const year = date.getUTCFullYear()
-  const month = date.getUTCMonth()
-  const day = date.getUTCDate()
-  const targetMonthIndex = month + months
-  const targetYear = year + Math.floor(targetMonthIndex / 12)
-  const normalizedMonth = ((targetMonthIndex % 12) + 12) % 12
-  const targetDay = Math.min(day, daysInMonthUtc(targetYear, normalizedMonth))
-  return new Date(Date.UTC(targetYear, normalizedMonth, targetDay))
-}
-
 function toIsoDate(date) {
   return date.toISOString().slice(0, 10)
-}
-
-function advanceRecurringDate(value, frequency) {
-  const date = new Date(`${String(value).slice(0, 10)}T00:00:00Z`)
-  if (frequency === 'Weekly') date.setUTCDate(date.getUTCDate() + 7)
-  else if (frequency === 'Biweekly') date.setUTCDate(date.getUTCDate() + 14)
-  else if (frequency === 'Monthly') return toIsoDate(addMonthsClamped(date, 1))
-  else if (frequency === 'Quarterly') return toIsoDate(addMonthsClamped(date, 3))
-  else if (frequency === 'Yearly') return toIsoDate(addMonthsClamped(date, 12))
-  return toIsoDate(date)
 }
 
 async function validateRecurringRelations(userId, recurring, { requireActive = true } = {}) {
@@ -1418,7 +1137,7 @@ async function getRecurringOverview(userId, includeInactive = true) {
   const result = await pool.query(
     `SELECT
        r.id, r.name, r.transaction_type, r.account_id, r.category_id, r.amount,
-       r.currency, r.frequency, r.next_due_date::text AS next_due_date, r.end_date::text AS end_date, r.notes, r.is_active,
+       r.currency, r.frequency, r.next_due_date::text AS next_due_date, r.end_date::text AS end_date, r.anchor_day, r.notes, r.is_active,
        r.created_at, r.updated_at,
        a.name AS account_name, a.account_type, a.is_archived AS account_archived,
        c.name AS category_name,
@@ -1453,16 +1172,26 @@ async function getRecurringOverview(userId, includeInactive = true) {
   const horizon = new Date(today)
   horizon.setUTCDate(horizon.getUTCDate() + 30)
   const horizonIso = toIsoDate(horizon)
+  let dueNext30Days = 0
 
   for (const item of upcoming) {
     if (!byCurrency.has(item.currency)) {
       byCurrency.set(item.currency, { currency: item.currency, income30: 0, expenses30: 0, dueItems30: 0 })
     }
-    if (item.next_due_date <= horizonIso) {
+    const occurrences = recurringOccurrencesInRange({
+      nextDueDate: item.next_due_date,
+      frequency: item.frequency,
+      endDate: item.end_date,
+      from: todayIso(),
+      to: horizonIso,
+      anchorDay: item.anchor_day,
+    })
+    dueNext30Days += occurrences.length
+    if (occurrences.length) {
       const row = byCurrency.get(item.currency)
-      row.dueItems30 += 1
-      if (item.transaction_type === 'Income') row.income30 += Number(item.amount || 0)
-      else row.expenses30 += Number(item.amount || 0)
+      row.dueItems30 += occurrences.length
+      if (item.transaction_type === 'Income') row.income30 += Number(item.amount || 0) * occurrences.length
+      else row.expenses30 += Number(item.amount || 0) * occurrences.length
     }
   }
 
@@ -1471,7 +1200,7 @@ async function getRecurringOverview(userId, includeInactive = true) {
     paused: result.rows.filter((item) => !item.is_active).length,
     overdue: upcoming.filter((item) => item.next_due_date < todayIso()).length,
     dueToday: upcoming.filter((item) => item.next_due_date === todayIso()).length,
-    dueNext30Days: upcoming.filter((item) => item.next_due_date >= todayIso() && item.next_due_date <= horizonIso).length,
+    dueNext30Days,
     byCurrency: Array.from(byCurrency.values()).map((row) => ({
       ...row,
       income30: row.income30.toFixed(2),
@@ -1486,7 +1215,6 @@ async function getRecurringOverview(userId, includeInactive = true) {
 router.get('/recurring', async (req, res) => {
   if (!pool) return res.status(503).json({ message: 'Database is not configured' })
   try {
-    await ensureDefaultFinanceCategories(req.auth.userId)
     const includeInactive = String(req.query.includeInactive || 'true').toLowerCase() !== 'false'
     const [recurring, accounts, categories] = await Promise.all([
       getRecurringOverview(req.auth.userId, includeInactive),
@@ -1506,16 +1234,15 @@ router.post('/recurring', async (req, res) => {
   if (validation.error) return res.status(400).json({ message: validation.error })
 
   try {
-    await ensureDefaultFinanceCategories(req.auth.userId)
     const relations = await validateRecurringRelations(req.auth.userId, validation.value, { requireActive: true })
     if (relations.error) return res.status(400).json({ message: relations.error })
     const item = validation.value
     const result = await pool.query(
       `INSERT INTO finance_recurring_items
-       (user_id, name, transaction_type, account_id, category_id, amount, currency, frequency, next_due_date, end_date, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       (user_id, name, transaction_type, account_id, category_id, amount, currency, frequency, next_due_date, end_date, notes, anchor_day)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING id`,
-      [req.auth.userId, item.name, item.transactionType, item.accountId, item.categoryId, item.amount, relations.value.currency, item.frequency, item.nextDueDate, item.endDate, item.notes],
+      [req.auth.userId, item.name, item.transactionType, item.accountId, item.categoryId, item.amount, relations.value.currency, item.frequency, item.nextDueDate, item.endDate, item.notes, Number(item.nextDueDate.slice(8, 10))],
     )
     const data = await getRecurringOverview(req.auth.userId, true)
     const created = data.items.find((row) => String(row.id) === String(result.rows[0].id))
@@ -1540,9 +1267,9 @@ router.put('/recurring/:id', async (req, res) => {
     await pool.query(
       `UPDATE finance_recurring_items
        SET name=$1, transaction_type=$2, account_id=$3, category_id=$4, amount=$5,
-           currency=$6, frequency=$7, next_due_date=$8, end_date=$9, notes=$10, updated_at=NOW()
-       WHERE id=$11 AND user_id=$12`,
-      [item.name, item.transactionType, item.accountId, item.categoryId, item.amount, relations.value.currency, item.frequency, item.nextDueDate, item.endDate, item.notes, req.params.id, req.auth.userId],
+           currency=$6, frequency=$7, next_due_date=$8, end_date=$9, notes=$10, anchor_day=$11, updated_at=NOW()
+       WHERE id=$12 AND user_id=$13`,
+      [item.name, item.transactionType, item.accountId, item.categoryId, item.amount, relations.value.currency, item.frequency, item.nextDueDate, item.endDate, item.notes, Number(item.nextDueDate.slice(8, 10)), req.params.id, req.auth.userId],
     )
     const data = await getRecurringOverview(req.auth.userId, true)
     const updated = data.items.find((row) => String(row.id) === String(req.params.id))
@@ -1657,14 +1384,21 @@ async function processRecurringOccurrence(userId, itemId, action, body = {}) {
         await client.query('ROLLBACK')
         return { status: 400, error: 'Transaction date is invalid.' }
       }
-      const tx = await client.query(
-        `INSERT INTO finance_transactions
-         (user_id, account_id, transaction_type, category_id, transfer_account_id, amount, currency, description, notes, transaction_date)
-         VALUES ($1,$2,$3,$4,NULL,$5,$6,$7,$8,$9)
-         RETURNING id`,
-        [userId, item.account_id, item.transaction_type, item.category_id, amount, item.currency, item.name, item.notes ? `Recurring schedule: ${item.notes}` : 'Recurring schedule', transactionDate],
-      )
-      transactionId = tx.rows[0].id
+      const tx = await createLedgerTransaction(client, {
+        userId,
+        transaction: {
+          accountId: item.account_id,
+          transactionType: item.transaction_type,
+          categoryId: item.category_id,
+          transferAccountId: null,
+          amount,
+          description: item.name,
+          notes: item.notes ? `Recurring schedule: ${item.notes}` : 'Recurring schedule',
+          transactionDate,
+        },
+        idempotencyKey: `recurring:${itemId}:${scheduledDate}`,
+      })
+      transactionId = tx.id
       actualAmount = amount
     }
 
@@ -1675,7 +1409,7 @@ async function processRecurringOccurrence(userId, itemId, action, body = {}) {
       [userId, itemId, scheduledDate, action, transactionId, actualAmount],
     )
 
-    const nextDueDate = advanceRecurringDate(scheduledDate, item.frequency)
+    const nextDueDate = advanceRecurringDate(scheduledDate, item.frequency, item.anchor_day)
     const stillActive = !item.end_date || nextDueDate <= String(item.end_date).slice(0, 10)
     await client.query(
       `UPDATE finance_recurring_items
@@ -1820,7 +1554,6 @@ async function getAnalyticsOverview(userId, currencyInput = 'GHS', monthsInput =
          LEFT JOIN movements m ON m.account_id = a.id
          WHERE a.user_id = $1
            AND a.currency = $2
-           AND a.is_archived = FALSE
          GROUP BY a.id
        )
        SELECT account_type,

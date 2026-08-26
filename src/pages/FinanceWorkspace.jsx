@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import AccountsPage from './AccountsPage.jsx'
 import DashboardPage from './DashboardPage.jsx'
 import BudgetsPage from './BudgetsPage.jsx'
@@ -10,9 +10,32 @@ import ReportsPage from './ReportsPage.jsx'
 import AlertsPage from './AlertsPage.jsx'
 import { apiRequest } from '../services/api.js'
 
+const NAV_ITEMS = [
+  { id: 'overview', label: 'Home', glyph: '⌂', description: 'Your daily money pulse' },
+  { id: 'accounts', label: 'Accounts', glyph: '◫', description: 'Balances and wallets' },
+  { id: 'transactions', label: 'Activity', glyph: '↕', description: 'Money in and out' },
+  { id: 'budgets', label: 'Plan', glyph: '◒', description: 'Monthly spending map' },
+  { id: 'goals', label: 'Goals', glyph: '◇', description: 'What you are building' },
+  { id: 'recurring', label: 'Rhythm', glyph: '↻', description: 'Bills and income cycles' },
+  { id: 'analytics', label: 'Insights', glyph: '⌁', description: 'Patterns in your money' },
+  { id: 'reports', label: 'Reports', glyph: '▤', description: 'Statements and exports' },
+  { id: 'alerts', label: 'Signals', glyph: '•', description: 'What needs attention' },
+]
+
+function initials(name) {
+  return String(name || 'Kora User')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('')
+}
+
 export default function FinanceWorkspace({ user, onLoggedOut }) {
   const [view, setView] = useState('overview')
   const [transactionIntent, setTransactionIntent] = useState(null)
+  const [railOpen, setRailOpen] = useState(false)
+  const activeItem = useMemo(() => NAV_ITEMS.find((item) => item.id === view) || NAV_ITEMS[0], [view])
 
   async function logout() {
     try {
@@ -22,49 +45,105 @@ export default function FinanceWorkspace({ user, onLoggedOut }) {
     }
   }
 
+  function navigate(nextView) {
+    setView(nextView)
+    setRailOpen(false)
+  }
+
   function openTransactions(type = null) {
     setTransactionIntent(type ? { type, key: Date.now() } : null)
-    setView('transactions')
+    navigate('transactions')
   }
 
   return (
-    <main className="dashboard-shell">
-      <header className="topbar">
-        <div className="brand"><span className="brand-mark">PF</span><span>Personal Finance</span></div>
-        <nav className="workspace-nav" aria-label="Finance navigation">
-          <button className={view === 'overview' ? 'nav-button active' : 'nav-button'} onClick={() => setView('overview')}>Overview</button>
-          <button className={view === 'accounts' ? 'nav-button active' : 'nav-button'} onClick={() => setView('accounts')}>Accounts</button>
-          <button className={view === 'transactions' ? 'nav-button active' : 'nav-button'} onClick={() => openTransactions()}>Transactions</button>
-          <button className={view === 'budgets' ? 'nav-button active' : 'nav-button'} onClick={() => setView('budgets')}>Budgets</button>
-          <button className={view === 'goals' ? 'nav-button active' : 'nav-button'} onClick={() => setView('goals')}>Goals</button>
-          <button className={view === 'recurring' ? 'nav-button active' : 'nav-button'} onClick={() => setView('recurring')}>Recurring</button>
-          <button className={view === 'analytics' ? 'nav-button active' : 'nav-button'} onClick={() => setView('analytics')}>Analytics</button>
-          <button className={view === 'reports' ? 'nav-button active' : 'nav-button'} onClick={() => setView('reports')}>Reports</button>
-          <button className={view === 'alerts' ? 'nav-button active' : 'nav-button'} onClick={() => setView('alerts')}>Alerts</button>
-        </nav>
-        <div className="user-actions"><span>{user.name}</span><button className="secondary-button compact" onClick={logout}>Sign out</button></div>
-      </header>
+    <main className="app-frame">
+      <button
+        className={`rail-scrim ${railOpen ? 'visible' : ''}`}
+        aria-label="Close navigation"
+        onClick={() => setRailOpen(false)}
+      />
 
-      {view === 'overview' && (
-        <DashboardPage
-          onOpenAccounts={() => setView('accounts')}
-          onOpenTransactions={openTransactions}
-          onOpenBudgets={() => setView('budgets')}
-          onOpenGoals={() => setView('goals')}
-          onOpenRecurring={() => setView('recurring')}
-          onOpenAnalytics={() => setView('analytics')}
-          onOpenReports={() => setView('reports')}
-          onOpenAlerts={() => setView('alerts')}
-        />
-      )}
-      {view === 'accounts' && <AccountsPage />}
-      {view === 'transactions' && <TransactionsPage intent={transactionIntent} />}
-      {view === 'budgets' && <BudgetsPage />}
-      {view === 'goals' && <GoalsPage />}
-      {view === 'recurring' && <RecurringPage onOpenTransactions={openTransactions} />}
-      {view === 'analytics' && <AnalyticsPage />}
-      {view === 'reports' && <ReportsPage />}
-      {view === 'alerts' && <AlertsPage onNavigate={(target) => setView(target)} />}
+      <aside className={`app-rail ${railOpen ? 'open' : ''}`}>
+        <div className="rail-brand" aria-label="Kora Money">
+          <span className="kora-mark"><i /><i /><i /></span>
+          <div><strong>Kora</strong><small>Money in rhythm</small></div>
+        </div>
+
+        <div className="rail-caption">YOUR SPACE</div>
+        <nav className="rail-nav" aria-label="Finance navigation">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              className={view === item.id ? 'rail-link active' : 'rail-link'}
+              onClick={() => item.id === 'transactions' ? openTransactions() : navigate(item.id)}
+              aria-current={view === item.id ? 'page' : undefined}
+            >
+              <span className="rail-glyph" aria-hidden="true">{item.glyph}</span>
+              <span><strong>{item.label}</strong><small>{item.description}</small></span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="rail-note">
+          <span className="rail-note-orbit" aria-hidden="true" />
+          <small>KORA NOTE</small>
+          <strong>Small moves become momentum.</strong>
+          <p>Keep today’s money decisions visible and intentional.</p>
+        </div>
+      </aside>
+
+      <section className="app-stage">
+        <header className="stage-bar">
+          <div className="stage-title-group">
+            <button className="mobile-menu-button" onClick={() => setRailOpen(true)} aria-label="Open navigation">☰</button>
+            <div><small>{activeItem.description}</small><strong>{activeItem.label}</strong></div>
+          </div>
+
+          <div className="stage-actions">
+            <button className="quick-capture" onClick={() => openTransactions('Expense')}>
+              <span>＋</span> Quick add
+            </button>
+            <div className="sync-pill"><i /> Secure ledger</div>
+            <div className="profile-chip">
+              <span>{initials(user.name)}</span>
+              <div><strong>{user.name}</strong><small>{user.email}</small></div>
+            </div>
+            <button className="signout-button" onClick={logout}>Sign out</button>
+          </div>
+        </header>
+
+        <div className="stage-content">
+          {view === 'overview' && (
+            <DashboardPage
+              onOpenAccounts={() => navigate('accounts')}
+              onOpenTransactions={openTransactions}
+              onOpenBudgets={() => navigate('budgets')}
+              onOpenGoals={() => navigate('goals')}
+              onOpenRecurring={() => navigate('recurring')}
+              onOpenAnalytics={() => navigate('analytics')}
+              onOpenReports={() => navigate('reports')}
+              onOpenAlerts={() => navigate('alerts')}
+            />
+          )}
+          {view === 'accounts' && <AccountsPage />}
+          {view === 'transactions' && <TransactionsPage intent={transactionIntent} />}
+          {view === 'budgets' && <BudgetsPage />}
+          {view === 'goals' && <GoalsPage />}
+          {view === 'recurring' && <RecurringPage onOpenTransactions={openTransactions} />}
+          {view === 'analytics' && <AnalyticsPage />}
+          {view === 'reports' && <ReportsPage />}
+          {view === 'alerts' && <AlertsPage onNavigate={navigate} />}
+        </div>
+      </section>
+
+      <nav className="mobile-dock" aria-label="Primary mobile navigation">
+        {NAV_ITEMS.slice(0, 5).map((item) => (
+          <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => item.id === 'transactions' ? openTransactions() : navigate(item.id)}>
+            <span aria-hidden="true">{item.glyph}</span><small>{item.label}</small>
+          </button>
+        ))}
+        <button onClick={() => setRailOpen(true)}><span aria-hidden="true">•••</span><small>More</small></button>
+      </nav>
     </main>
   )
 }

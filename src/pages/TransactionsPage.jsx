@@ -134,7 +134,7 @@ export default function TransactionsPage({ intent }) {
 
   async function deleteTransaction(transaction) {
     const label = transaction.description || transaction.category_name || 'this transaction'
-    if (!window.confirm(`Delete “${label}”? This will immediately recalculate the affected account balance.`)) return
+    if (!window.confirm(`Remove “${label}” from active records? Kora will recalculate the balance and preserve an audit reversal.`)) return
     setError('')
     try {
       await apiRequest(`/api/finance/transactions/${transaction.id}`, { method: 'DELETE' })
@@ -174,12 +174,13 @@ export default function TransactionsPage({ intent }) {
   }
 
   const ghsMonth = monthly.find((item) => item.currency === 'GHS')
+  const legacyEntries = transactions.filter((item) => item.ledger_status !== 'Balanced').length
 
   return (
     <section className="transactions-workspace">
       <div className="section-heading-row transaction-heading">
         <div>
-          <p className="eyebrow">MILESTONE 3</p>
+          <p className="eyebrow">MONEY ACTIVITY</p>
           <h1>Transactions & cash flow</h1>
           <p className="muted">Record income, expenses and transfers. Account balances are calculated from the ledger automatically.</p>
         </div>
@@ -195,6 +196,7 @@ export default function TransactionsPage({ intent }) {
         <div><span>GHS expenses this month</span><strong className="amount-expense">{money(ghsMonth?.expenses || 0, 'GHS')}</strong></div>
         <div><span>GHS net cash flow</span><strong>{money(ghsMonth?.net_cash_flow || 0, 'GHS')}</strong></div>
         <div><span>Visible transactions</span><strong>{transactions.length}</strong></div>
+        <div><span>Ledger integrity</span><strong className={legacyEntries ? '' : 'amount-income'}>{legacyEntries ? `${legacyEntries} pending` : 'Balanced'}</strong></div>
       </div>
 
       <form className="transaction-filters" onSubmit={applyFilters}>
@@ -242,6 +244,7 @@ export default function TransactionsPage({ intent }) {
                 <div className="transaction-title-line">
                   <strong>{transaction.description || transaction.category_name || 'Transfer'}</strong>
                   <span className={`type-chip ${transaction.transaction_type.toLowerCase()}`}>{transaction.transaction_type}</span>
+                  <span className={`ledger-proof ${transaction.ledger_status === 'Balanced' ? 'balanced' : 'legacy'}`}><i />{transaction.ledger_status === 'Balanced' ? 'Balanced entry' : 'Needs migration'}</span>
                 </div>
                 <p>
                   {transaction.transaction_type === 'Transfer'

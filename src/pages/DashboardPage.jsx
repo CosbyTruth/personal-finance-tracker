@@ -51,23 +51,29 @@ export default function DashboardPage({ onOpenAccounts, onOpenTransactions, onOp
 
   return (
     <>
-      <section className="hero-panel account-hero">
-        <div>
-          <p className="eyebrow">MILESTONE 9 · ALERTS & SMART INSIGHTS</p>
-          <h1>Track your money. Control your spending.</h1>
-          <p className="lead">Your ledger remains the source of truth. Alerts now surface financial conditions that need attention without changing your records or pretending to forecast the future.</p>
+      <section className="hero-panel account-hero dashboard-hero">
+        <div className="dashboard-hero-copy">
+          <p className="eyebrow">YOUR MONEY TODAY</p>
+          <h1>Clear finances.<br />Calmer decisions.</h1>
+          <p className="lead">See your balance, spending and progress in one simple view. Every figure comes directly from your secure ledger.</p>
           <div className="hero-button-row">
             <button className="primary-button hero-action" onClick={() => onOpenTransactions('Expense')}>+ Add expense</button>
             <button className="secondary-button hero-action" onClick={() => onOpenTransactions('Income')}>+ Add income</button>
-            <button className="secondary-button hero-action" onClick={() => onOpenTransactions('Transfer')}>Transfer</button>
-            <button className="secondary-button hero-action" onClick={onOpenAnalytics}>View analytics</button>
-            <button className="secondary-button hero-action" onClick={onOpenReports}>Reports</button>
-            <button className="secondary-button hero-action" onClick={onOpenAlerts}>Alerts</button>
+            <button className="secondary-button hero-action" onClick={onOpenAnalytics}>View insights</button>
           </div>
         </div>
-        <div className="currency-pill">
-          <small>GHS BALANCE</small>
-          <strong>{ghsBalance ? money(ghsBalance.balance, 'GHS') : 'GHS 0.00'}</strong>
+        <div className="dashboard-balance-graphic">
+          <div className="currency-pill">
+            <small>AVAILABLE BALANCE</small>
+            <strong>{ghsBalance ? money(ghsBalance.balance, 'GHS') : 'GHS 0.00'}</strong>
+            <span>Across your active GHS accounts</span>
+          </div>
+          <div className="balance-graphic-heading"><span>Monthly money flow</span><strong aria-label="Trend is steady">Steady</strong></div>
+          <div className="balance-bars" aria-hidden="true">
+            <i style={{ height: '34%' }} /><i style={{ height: '48%' }} /><i style={{ height: '43%' }} /><i style={{ height: '62%' }} />
+            <i style={{ height: '54%' }} /><i style={{ height: '78%' }} /><i style={{ height: '69%' }} /><i style={{ height: '88%' }} />
+          </div>
+          <div className="balance-graphic-footer"><span><i />Money in</span><button type="button" onClick={onOpenReports}>Open reports →</button></div>
         </div>
       </section>
 

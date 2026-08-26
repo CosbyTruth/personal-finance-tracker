@@ -115,7 +115,7 @@ export default function AccountsPage() {
     <section className="accounts-workspace">
       <div className="section-heading-row">
         <div>
-          <p className="eyebrow">MILESTONE 2</p>
+          <p className="eyebrow">MONEY PLACES</p>
           <h1>Accounts & balances</h1>
           <p className="muted">Add every place where you keep money. Archived accounts remain in your records instead of being deleted.</p>
         </div>

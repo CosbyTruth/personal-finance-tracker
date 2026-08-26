@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiRequest } from '../services/api.js'
+import { safeCsvCell } from '../utils/csv.js'
 
 function isoLocal(date) {
   const year = date.getFullYear()
@@ -60,11 +61,6 @@ function presetRange(name) {
   return { from: initialRange().from, to: today }
 }
 
-function csvCell(value) {
-  const text = String(value ?? '')
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-}
-
 function csvForTransactions(transactions) {
   const headers = [
     'Date', 'Type', 'Account', 'Destination Account', 'Category', 'Description', 'Notes',
@@ -86,7 +82,7 @@ function csvForTransactions(transactions) {
       impact.toFixed(2),
     ]
   })
-  return [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n')
+  return [headers, ...rows].map((row) => row.map(safeCsvCell).join(',')).join('\r\n')
 }
 
 function downloadText(filename, text, type) {
@@ -163,7 +159,7 @@ export default function ReportsPage() {
     <section className="reports-workspace">
       <div className="section-heading-row reports-heading-row report-no-print">
         <div>
-          <p className="eyebrow">MILESTONE 8 · REPORTS & EXPORT</p>
+          <p className="eyebrow">REPORTS · EXPORT · PRINT</p>
           <h1>Financial reports</h1>
           <p className="muted">Build a date-range statement directly from your ledger, then export the transaction detail or print the report.</p>
         </div>
@@ -197,7 +193,7 @@ export default function ReportsPage() {
         <div className="report-print-area">
           <header className="print-report-header">
             <div>
-              <p className="eyebrow">PERSONAL FINANCE TRACKER</p>
+              <p className="eyebrow">KORA MONEY</p>
               <h1>Cash Flow Report</h1>
               <p>{dateLabel(report.filters.from)} — {dateLabel(report.filters.to)} · {report.filters.currency}</p>
             </div>
@@ -338,7 +334,7 @@ export default function ReportsPage() {
           </section>
 
           <footer className="print-report-footer">
-            <span>Personal Finance Tracker · Cash Flow Report</span>
+            <span>Kora Money · Cash Flow Report</span>
             <span>{report.filters.currency} · {report.filters.from} to {report.filters.to}</span>
           </footer>
         </div>

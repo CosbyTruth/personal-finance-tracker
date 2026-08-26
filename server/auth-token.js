@@ -28,10 +28,13 @@ export function authCookieOptions() {
     process.env.COOKIE_SECURE === 'true' ||
     (process.env.COOKIE_SECURE !== 'false' && productionDetected)
 
+  const configuredSameSite = String(process.env.COOKIE_SAME_SITE || 'lax').toLowerCase()
+  const sameSite = ['lax', 'strict', 'none'].includes(configuredSameSite) ? configuredSameSite : 'lax'
+
   return {
     httpOnly: true,
     secure,
-    sameSite: 'lax',
+    sameSite,
     path: '/',
     maxAge: 7 * 24 * 60 * 60 * 1000,
   }

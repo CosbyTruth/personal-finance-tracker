@@ -92,7 +92,7 @@ export default function AnalyticsPage() {
     <section className="analytics-workspace">
       <div className="section-heading-row analytics-heading-row">
         <div>
-          <p className="eyebrow">MILESTONE 7 · FINANCIAL ANALYTICS</p>
+          <p className="eyebrow">PATTERNS · FINANCIAL ANALYTICS</p>
           <h1>See what your money is doing.</h1>
           <p className="muted">Every chart is derived from your transaction ledger, account balances, budgets and goals. Transfers are excluded from income and spending analytics.</p>
         </div>

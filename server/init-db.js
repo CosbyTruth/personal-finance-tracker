@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { pool } from './db.js'
+import { runMigrations } from './migrate.js'
 
 if (!pool) {
   console.error('DATABASE_URL is missing. Copy .env.example to .env and configure PostgreSQL first.')
@@ -188,7 +189,8 @@ CREATE INDEX IF NOT EXISTS idx_finance_recurring_occurrences_item
 
 try {
   await pool.query(sql)
-  console.log('Database initialized: users, accounts, categories, transactions, budgets, savings goals, recurring cash flow and analytics/report indexes and smart-alert rules are ready.')
+  await runMigrations(pool)
+  console.log('Database initialized: Kora Money core tables and the auditable ledger are ready.')
 } catch (error) {
   console.error('Database initialization failed:', error)
   process.exitCode = 1

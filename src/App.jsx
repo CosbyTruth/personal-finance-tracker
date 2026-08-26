@@ -20,8 +20,8 @@ export default function App() {
     return (
       <main className="loading-shell">
         <div className="loading-card">
-          <span className="brand-mark">PF</span>
-          <p>Loading your finance workspace…</p>
+          <span className="brand-mark">K</span>
+          <p>Tuning your money workspace…</p>
         </div>
       </main>
     )

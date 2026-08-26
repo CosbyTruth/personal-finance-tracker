@@ -221,7 +221,7 @@ export default function GoalsPage() {
     <section className="goals-workspace">
       <div className="section-heading-row goals-heading">
         <div>
-          <p className="eyebrow">MILESTONE 5 · SAVINGS GOALS & TARGETS</p>
+          <p className="eyebrow">GOALS · MOMENTUM · TARGETS</p>
           <h1>Turn future plans into measurable targets.</h1>
           <p className="muted">Track how much you have earmarked for each goal without changing your account balances or cash-flow totals twice.</p>
         </div>

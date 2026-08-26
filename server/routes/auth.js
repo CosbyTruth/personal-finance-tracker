@@ -5,9 +5,22 @@ import { AUTH_COOKIE, authCookieOptions, createAuthToken } from '../auth-token.j
 import { requireAuth } from '../middleware/auth.js'
 import { ensureDefaultFinanceCategories } from '../finance-defaults.js'
 import { validatePassword } from '../password-policy.js'
+import { authRateKey, checkAuthRateLimit, clearAuthFailures, recordAuthFailure } from '../auth-rate-limit.js'
 
 const router = express.Router()
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('kora-dummy-password-value', 12)
+
+async function enforceAuthLimit(req, res, action, email) {
+  const key = authRateKey(action, req.ip, email)
+  const limit = await checkAuthRateLimit(key)
+  if (!limit.allowed) {
+    res.set('Retry-After', String(limit.retryAfterSeconds))
+    res.status(429).json({ message: 'Too many attempts. Please wait a few minutes and try again.' })
+    return null
+  }
+  return key
+}
 
 function ensureDatabase(res) {
   if (!pool) {
@@ -43,6 +56,8 @@ router.post('/register', async (req, res) => {
   if (!passwordResult.valid) {
     return res.status(400).json({ message: passwordResult.message, code: 'WEAK_PASSWORD' })
   }
+  const rateKey = await enforceAuthLimit(req, res, 'register', email)
+  if (!rateKey) return
 
   const client = await pool.connect()
   try {
@@ -54,15 +69,17 @@ router.post('/register', async (req, res) => {
        RETURNING id, name, email, created_at`,
       [name, email, passwordHash],
     )
-    await client.query('COMMIT')
-
     const user = publicUser(result.rows[0])
-    await ensureDefaultFinanceCategories(user.id)
+    await ensureDefaultFinanceCategories(user.id, client)
+    await client.query('COMMIT')
+    await clearAuthFailures(rateKey).catch(() => {})
+
     setAuthCookie(res, user)
     return res.status(201).json({ user })
   } catch (error) {
     await client.query('ROLLBACK')
     if (error.code === '23505') {
+      await recordAuthFailure(rateKey)
       return res.status(409).json({ message: 'An account with that email already exists' })
     }
     console.error('Registration failed:', error)
@@ -81,6 +98,8 @@ router.post('/login', async (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required' })
   }
+  const rateKey = await enforceAuthLimit(req, res, 'login', email)
+  if (!rateKey) return
 
   try {
     const result = await pool.query(
@@ -89,12 +108,15 @@ router.post('/login', async (req, res) => {
       [email],
     )
     const row = result.rows[0]
-    if (!row || !(await bcrypt.compare(password, row.password_hash))) {
+    const passwordMatches = await bcrypt.compare(password, row?.password_hash || DUMMY_PASSWORD_HASH)
+    if (!row || !passwordMatches) {
+      await recordAuthFailure(rateKey)
       return res.status(401).json({ message: 'Invalid email or password' })
     }
 
     const user = publicUser(row)
     await ensureDefaultFinanceCategories(user.id)
+    await clearAuthFailures(rateKey).catch(() => {})
     setAuthCookie(res, user)
     return res.json({ user })
   } catch (error) {
@@ -124,7 +146,6 @@ router.get('/me', requireAuth, async (req, res) => {
     )
     if (!result.rows[0]) return res.status(401).json({ message: 'Account no longer exists' })
 
-    await ensureDefaultFinanceCategories(req.auth.userId)
     return res.json({ user: publicUser(result.rows[0]) })
   } catch (error) {
     console.error('Session lookup failed:', error)

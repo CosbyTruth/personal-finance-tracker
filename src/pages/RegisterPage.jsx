@@ -1,13 +1,11 @@
 import { useMemo, useState } from 'react'
+import PasswordInput from '../components/PasswordInput.jsx'
 import { apiRequest } from '../services/api.js'
 
 function getPasswordChecks(password) {
   return {
-    length: password.length >= 8 && password.length <= 15,
-    uppercase: /[A-Z]/.test(password),
-    lowercase: /[a-z]/.test(password),
-    number: /\d/.test(password),
-    special: /[^A-Za-z0-9\s]/.test(password),
+    length: password.length >= 12 && password.length <= 72,
+    variety: /[A-Za-z]/.test(password) && /[^A-Za-z]/.test(password),
   }
 }
 
@@ -25,9 +23,8 @@ export default function RegisterPage({ onAuthenticated, onShowLogin }) {
   async function submit(event) {
     event.preventDefault()
     setError('')
-    if (!strongEnough) return setError('Choose a password that meets every requirement below.')
+    if (!strongEnough) return setError('Use at least 12 characters and combine letters with numbers, spaces or symbols.')
     if (form.password !== form.confirm) return setError('Passwords do not match')
-
     setBusy(true)
     try {
       const data = await apiRequest('/api/auth/register', {
@@ -43,40 +40,43 @@ export default function RegisterPage({ onAuthenticated, onShowLogin }) {
   }
 
   return (
-    <main className="auth-shell">
-      <section className="auth-intro">
-        <div className="brand"><span className="brand-mark">PF</span><span>Personal Finance</span></div>
-        <p className="eyebrow">YOUR PRIVATE LEDGER</p>
-        <h1>Build the financial picture once.</h1>
-        <p className="lead">Create your account with a strong, unique password you do not reuse on other services.</p>
+    <main className="kora-auth-shell register-shell">
+      <section className="auth-story register-story">
+        <div className="auth-ambient one" /><div className="auth-ambient two" />
+        <div className="rail-brand auth-brand">
+          <span className="kora-mark"><i /><i /><i /></span>
+          <div><strong>Kora</strong><small>Money in rhythm</small></div>
+        </div>
+        <div className="auth-story-copy">
+          <p className="eyebrow">BUILD YOUR MONEY HOME</p>
+          <h1>Give every plan a place to <em>grow</em>.</h1>
+          <p>Bring accounts, spending, goals and recurring commitments into one beautifully clear workspace.</p>
+        </div>
+        <div className="journey-steps">
+          <div><span>01</span><p><strong>Connect the picture</strong><small>Add the accounts you use every day.</small></p></div>
+          <div><span>02</span><p><strong>Find your rhythm</strong><small>See patterns without spreadsheet work.</small></p></div>
+          <div><span>03</span><p><strong>Move with purpose</strong><small>Turn goals into visible momentum.</small></p></div>
+        </div>
       </section>
-      <section className="auth-panel">
-        <div className="auth-card">
-          <p className="eyebrow">NEW ACCOUNT</p>
-          <h2>Create your profile</h2>
-          <form onSubmit={submit}>
-            <label>Name<input value={form.name} onChange={(e) => change('name', e.target.value)} autoComplete="name" minLength="2" maxLength="80" required /></label>
-            <label>Email<input type="email" value={form.email} onChange={(e) => change('email', e.target.value)} autoComplete="email" maxLength="254" required /></label>
-            <label>
-              Password
-              <input type="password" value={form.password} onChange={(e) => change('password', e.target.value)} autoComplete="new-password" minLength="8" maxLength="15" required />
-            </label>
-            <div className="password-guidance" aria-live="polite">
-              <p>Password requirements:</p>
-              <ul>
-                <li className={checks.length ? 'met' : ''}>8–15 characters</li>
-                <li className={checks.uppercase ? 'met' : ''}>At least one uppercase letter</li>
-                <li className={checks.lowercase ? 'met' : ''}>At least one lowercase letter</li>
-                <li className={checks.number ? 'met' : ''}>At least one number</li>
-                <li className={checks.special ? 'met' : ''}>At least one special character, e.g. ! @ # $ %</li>
-              </ul>
-              <small>Use a password that is unique to this app.</small>
+
+      <section className="auth-entry">
+        <div className="auth-entry-inner register-inner">
+          <div className="auth-welcome"><span className="auth-kicker">CREATE YOUR SPACE</span><h2>Let’s make money feel lighter.</h2><p>Start with your identity. Your first account comes next.</p></div>
+          <form className="kora-auth-form" onSubmit={submit}>
+            <div className="form-grid-two">
+              <label>Your name<input value={form.name} onChange={(event) => change('name', event.target.value)} autoComplete="name" placeholder="Ama Mensah" minLength="2" maxLength="80" required /></label>
+              <label>Email address<input type="email" value={form.email} onChange={(event) => change('email', event.target.value)} autoComplete="email" placeholder="ama@example.com" maxLength="254" required /></label>
             </div>
-            <label>Confirm password<input type="password" value={form.confirm} onChange={(e) => change('confirm', e.target.value)} autoComplete="new-password" minLength="8" maxLength="15" required /></label>
-            {error && <p className="error-message">{error}</p>}
-            <button className="primary-button" disabled={busy || !strongEnough}>{busy ? 'Creating…' : 'Create account'}</button>
+            <PasswordInput label="Create a passphrase" value={form.password} onChange={(event) => change('password', event.target.value)} autoComplete="new-password" minLength={12} maxLength={72} />
+            <div className="passphrase-meter" aria-live="polite">
+              <span className={checks.length ? 'met' : ''}>12–72 characters</span>
+              <span className={checks.variety ? 'met' : ''}>Letters + another character type</span>
+            </div>
+            <PasswordInput label="Confirm passphrase" value={form.confirm} onChange={(event) => change('confirm', event.target.value)} autoComplete="new-password" minLength={12} maxLength={72} />
+            {error && <p className="error-message" role="alert">{error}</p>}
+            <button className="primary-button auth-submit" disabled={busy || !strongEnough}>{busy ? 'Creating your space…' : 'Create my Kora workspace'}<span>→</span></button>
           </form>
-          <p className="switch-copy">Already registered? <button className="text-button" onClick={onShowLogin}>Sign in</button></p>
+          <p className="auth-switch">Already have a workspace? <button type="button" className="text-button" onClick={onShowLogin}>Sign in</button></p>
         </div>
       </section>
     </main>

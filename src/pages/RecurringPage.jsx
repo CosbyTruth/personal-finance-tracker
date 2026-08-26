@@ -184,7 +184,7 @@ export default function RecurringPage({ onOpenTransactions }) {
     <section className="recurring-workspace">
       <div className="section-heading-row">
         <div>
-          <p className="eyebrow">MILESTONE 6</p>
+          <p className="eyebrow">MONEY RHYTHM</p>
           <h1>Recurring bills & income</h1>
           <p className="muted">Plan repeated cash flow. A schedule never changes a balance until you explicitly post the occurrence into Transactions.</p>
         </div>

@@ -126,7 +126,7 @@ export default function BudgetsPage() {
     <section className="budgets-workspace">
       <div className="section-heading-row budget-heading">
         <div>
-          <p className="eyebrow">MILESTONE 4 · BUDGETS & SPENDING CONTROL</p>
+          <p className="eyebrow">PLAN · SPEND · ADJUST</p>
           <h1>Give every spending category a limit.</h1>
           <p className="muted">Budgets are plans. Actual spending always comes from your expense transactions, so there is no duplicate balance to maintain.</p>
         </div>

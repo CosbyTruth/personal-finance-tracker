@@ -34,7 +34,7 @@ export default function AlertsPage({ onNavigate }) {
     <section className="alerts-workspace">
       <div className="section-heading-row alerts-heading-row">
         <div>
-          <p className="eyebrow">MILESTONE 9 · ALERTS & SMART INSIGHTS</p>
+          <p className="eyebrow">SIGNALS · SMART INSIGHTS</p>
           <h1>Know what needs attention.</h1>
           <p className="muted">Rules are calculated from your live balances, budgets, recurring schedules, goals and transaction history. These are decision-support signals—not forecasts.</p>
         </div>

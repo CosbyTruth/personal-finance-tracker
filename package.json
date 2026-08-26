@@ -8,12 +8,16 @@
     "dev:server": "nodemon server/server.js",
     "dev:client": "vite",
     "db:init": "node server/init-db.js",
+    "db:migrate": "node server/migrate.js",
+    "db:migrate:check": "node server/check-migrations.js",
     "db:check": "node server/check-db.js",
     "env:check": "node server/check-env.js",
-    "build": "vite build",
+    "test": "node --test",
+    "check": "node --check server/app.js && node --check server/routes/auth.js && node --check server/routes/finance.js && node --check server/data/ledger-repository.js && node --check server/data/finance-read-repository.js && node --check server/auth-rate-limit.js && node --check server/migrate.js && npm test && npm run build",
+    "build": "vite build --configLoader runner",
     "preview": "vite preview",
     "start": "node server/server.js",
-    "deploy:check": "npm run env:check && npm run db:check && npm run build"
+    "deploy:check": "npm run env:check && npm run db:check && npm run db:migrate:check && npm run check"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
