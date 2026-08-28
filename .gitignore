@@ -1,5 +1,9 @@
 node_modules/
 dist/
 .env
+mobile/.expo/
+mobile/dist/
+mobile/node_modules/
+mobile/.env
 *.log
 .DS_Store

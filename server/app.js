@@ -29,7 +29,7 @@ app.use((req, res, next) => {
     res.set('Access-Control-Allow-Origin', origin)
     res.set('Access-Control-Allow-Credentials', 'true')
     res.set('Vary', 'Origin')
-    res.set('Access-Control-Allow-Headers', 'Content-Type, Idempotency-Key')
+    res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key, X-Kora-Client')
     res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
   }
   if (!originAllowed && req.method !== 'GET' && req.method !== 'HEAD') {

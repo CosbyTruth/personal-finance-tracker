@@ -17,6 +17,9 @@
     "build": "vite build --configLoader runner",
     "preview": "vite preview",
     "start": "node server/server.js",
+    "mobile:start": "npm --prefix mobile start",
+    "mobile:android": "npm --prefix mobile run android",
+    "mobile:check": "npm --prefix mobile run check",
     "deploy:check": "npm run env:check && npm run db:check && npm run db:migrate:check && npm run check"
   },
   "dependencies": {

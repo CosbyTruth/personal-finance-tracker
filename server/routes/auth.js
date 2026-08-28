@@ -34,8 +34,14 @@ function publicUser(row) {
   return { id: row.id, name: row.name, email: row.email, createdAt: row.created_at }
 }
 
-function setAuthCookie(res, user) {
-  res.cookie(AUTH_COOKIE, createAuthToken(user), authCookieOptions())
+function sendAuthenticatedUser(req, res, user, status = 200) {
+  const token = createAuthToken(user)
+  res.cookie(AUTH_COOKIE, token, authCookieOptions())
+
+  // Native apps cannot rely on browser cookies. Only return the bearer token
+  // when the caller explicitly identifies itself as the Kora mobile client.
+  const payload = req.get('x-kora-client') === 'mobile' ? { user, token } : { user }
+  return res.status(status).json(payload)
 }
 
 router.post('/register', async (req, res) => {
@@ -74,8 +80,7 @@ router.post('/register', async (req, res) => {
     await client.query('COMMIT')
     await clearAuthFailures(rateKey).catch(() => {})
 
-    setAuthCookie(res, user)
-    return res.status(201).json({ user })
+    return sendAuthenticatedUser(req, res, user, 201)
   } catch (error) {
     await client.query('ROLLBACK')
     if (error.code === '23505') {
@@ -117,8 +122,7 @@ router.post('/login', async (req, res) => {
     const user = publicUser(row)
     await ensureDefaultFinanceCategories(user.id)
     await clearAuthFailures(rateKey).catch(() => {})
-    setAuthCookie(res, user)
-    return res.json({ user })
+    return sendAuthenticatedUser(req, res, user)
   } catch (error) {
     console.error('Login failed:', error)
     return res.status(500).json({ message: 'Could not sign in' })
