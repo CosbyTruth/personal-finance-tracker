@@ -398,6 +398,7 @@ input::placeholder, textarea::placeholder { color: #77867e; opacity: 1; }
 .stage-content .architecture-grid div,
 .stage-content .balance-summary-strip > div,
 .stage-content .cashflow-card,
+.stage-content .dashboard-alert-summary > div,
 .stage-content .dashboard-budget-summary > div,
 .stage-content .dashboard-goal-summary > div,
 .stage-content .dashboard-recurring-summary > div,
@@ -409,6 +410,15 @@ input::placeholder, textarea::placeholder { color: #77867e; opacity: 1; }
 .stage-content .report-metric-grid article,
 .stage-content .alert-summary-card,
 .stage-content .alerts-rule-grid > div { border-color: var(--kora-line); background: #f8fbf9; color: var(--kora-ink); }
+.stage-content .dashboard-alert-summary > div { min-height: 88px; padding: .95rem 1rem; border: 1px solid var(--kora-line); border-radius: 14px; background: #fff; color: var(--kora-ink); }
+.stage-content .dashboard-alert-summary > div:nth-child(1) { border-color: #efcfcb; background: #fff7f6; box-shadow: inset 4px 0 0 #d65d54; }
+.stage-content .dashboard-alert-summary > div:nth-child(2) { border-color: #ead9a8; background: #fffaf0; box-shadow: inset 4px 0 0 #d4a52f; }
+.stage-content .dashboard-alert-summary > div:nth-child(3) { border-color: #cce2d6; background: #f2f8f5; box-shadow: inset 4px 0 0 #36996b; }
+.stage-content .dashboard-alert-summary span { color: #405249; font-size: .84rem; font-weight: 650; }
+.stage-content .dashboard-alert-summary strong { margin-top: .3rem; color: var(--kora-ink); font-family: inherit; font-size: 1.35rem; font-weight: 760; }
+.stage-content .dashboard-alert-summary > div:nth-child(1) strong { color: #a63d36; }
+.stage-content .dashboard-alert-summary > div:nth-child(2) strong { color: #725410; }
+.stage-content .dashboard-alert-summary > div:nth-child(3) strong { color: #126143; }
 .stage-content .recent-row, .stage-content .dashboard-recurring-row, .stage-content .report-category-row, .stage-content .report-month-row { border-color: var(--kora-line); }
 .stage-content .recent-copy span, .stage-content .recent-amount span, .stage-content .transaction-main p, .stage-content .transaction-main small, .stage-content .transaction-value span, .stage-content .account-kind, .stage-content .account-meta, .stage-content .field-help { color: var(--kora-muted); font-size: .82rem; }
 .stage-content .transaction-badge { background: #edf2ef; color: #42554b; }
@@ -740,6 +750,7 @@ input::placeholder, textarea::placeholder { color: #77867e; opacity: 1; }
 [data-theme="dark"] .stage-content .insight-grid > div,
 [data-theme="dark"] .stage-content .report-metric-grid article,
 [data-theme="dark"] .stage-content .alert-summary-card,
+[data-theme="dark"] .stage-content .dashboard-alert-summary > div,
 [data-theme="dark"] .stage-content .alerts-rule-grid > div,
 [data-theme="dark"] .stage-content .flow-list > div,
 [data-theme="dark"] .stage-content .workspace-nav,
@@ -751,6 +762,13 @@ input::placeholder, textarea::placeholder { color: #77867e; opacity: 1; }
 [data-theme="dark"] .stage-content .print-report-header,
 [data-theme="dark"] .stage-content .empty-state,
 [data-theme="dark"] .stage-content .empty-inline { border-color: var(--kora-line); background: #171f1b; color: var(--kora-ink); }
+[data-theme="dark"] .stage-content .dashboard-alert-summary > div:nth-child(1) { border-color: #61312e; background: #2d1d1c; box-shadow: inset 4px 0 0 #e47369; }
+[data-theme="dark"] .stage-content .dashboard-alert-summary > div:nth-child(2) { border-color: #594b29; background: #2a2619; box-shadow: inset 4px 0 0 #d9ae49; }
+[data-theme="dark"] .stage-content .dashboard-alert-summary > div:nth-child(3) { border-color: #2e4d3c; background: #16271f; box-shadow: inset 4px 0 0 #55bd87; }
+[data-theme="dark"] .stage-content .dashboard-alert-summary span { color: #c5d2cb; }
+[data-theme="dark"] .stage-content .dashboard-alert-summary > div:nth-child(1) strong { color: #ffb4ad; }
+[data-theme="dark"] .stage-content .dashboard-alert-summary > div:nth-child(2) strong { color: #ffe09a; }
+[data-theme="dark"] .stage-content .dashboard-alert-summary > div:nth-child(3) strong { color: #92e2b8; }
 [data-theme="dark"] .stage-content .recent-row,
 [data-theme="dark"] .stage-content .dashboard-recurring-row,
 [data-theme="dark"] .stage-content .report-category-row,
