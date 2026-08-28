@@ -1,5 +1,8 @@
 import pg from 'pg'
-import 'dotenv/config'
+import dotenv from 'dotenv'
+
+const localRuntime = process.env.NETLIFY !== 'true' && process.env.CONTEXT !== 'production'
+dotenv.config({ override: localRuntime })
 
 const { Pool } = pg
 const databaseUrl = process.env.DATABASE_URL

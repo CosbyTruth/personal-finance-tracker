@@ -55,4 +55,21 @@ app.use('/api', (req, res) => {
   res.status(404).json({ message: 'API route not found' })
 })
 
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error)
+
+  console.error('Unhandled API error:', error)
+  const databaseErrorCodes = new Set(['EACCES', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', '28P01', '53300', '57P01'])
+  const databaseUnavailable = databaseErrorCodes.has(error?.code)
+    || String(error?.code || '').startsWith('08')
+    || error instanceof AggregateError
+
+  return res.status(databaseUnavailable ? 503 : 500).json({
+    message: databaseUnavailable
+      ? 'Kora cannot reach the database right now. Please try again shortly.'
+      : 'Kora could not complete that request. Please try again.',
+    code: databaseUnavailable ? 'DATABASE_UNAVAILABLE' : 'INTERNAL_ERROR',
+  })
+})
+
 export default app

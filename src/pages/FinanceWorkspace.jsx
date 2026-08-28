@@ -8,6 +8,7 @@ import RecurringPage from './RecurringPage.jsx'
 import AnalyticsPage from './AnalyticsPage.jsx'
 import ReportsPage from './ReportsPage.jsx'
 import AlertsPage from './AlertsPage.jsx'
+import ThemeToggle from '../components/ThemeToggle.jsx'
 import { apiRequest } from '../services/api.js'
 
 const NAV_ITEMS = [
@@ -100,6 +101,7 @@ export default function FinanceWorkspace({ user, onLoggedOut }) {
           </div>
 
           <div className="stage-actions">
+            <ThemeToggle />
             <button className="quick-capture" onClick={() => openTransactions('Expense')}>
               <span>＋</span> Quick add
             </button>

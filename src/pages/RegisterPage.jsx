@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import PasswordInput from '../components/PasswordInput.jsx'
+import ThemeToggle from '../components/ThemeToggle.jsx'
 import { apiRequest } from '../services/api.js'
 
 function getPasswordChecks(password) {
@@ -41,6 +42,7 @@ export default function RegisterPage({ onAuthenticated, onShowLogin }) {
 
   return (
     <main className="kora-auth-shell register-shell">
+      <ThemeToggle className="auth-theme-toggle" />
       <section className="auth-story register-story">
         <div className="auth-ambient one" /><div className="auth-ambient two" />
         <div className="rail-brand auth-brand">
