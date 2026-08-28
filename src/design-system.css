@@ -769,6 +769,12 @@ input::placeholder, textarea::placeholder { color: #77867e; opacity: 1; }
 [data-theme="dark"] .stage-content .dashboard-alert-summary > div:nth-child(1) strong { color: #ffb4ad; }
 [data-theme="dark"] .stage-content .dashboard-alert-summary > div:nth-child(2) strong { color: #ffe09a; }
 [data-theme="dark"] .stage-content .dashboard-alert-summary > div:nth-child(3) strong { color: #92e2b8; }
+[data-theme="dark"] .stage-content .dashboard-alert-row { border: 1px solid #334039; border-left-width: 4px; background: #171f1b; color: var(--kora-ink); }
+[data-theme="dark"] .stage-content .dashboard-alert-row.critical { border-color: #4b3532; border-left-color: #e47369; background: #261c1a; }
+[data-theme="dark"] .stage-content .dashboard-alert-row.warning { border-color: #4b432d; border-left-color: #d9ae49; background: #252219; }
+[data-theme="dark"] .stage-content .dashboard-alert-row.info { border-color: #2d473a; border-left-color: #55bd87; background: #16231d; }
+[data-theme="dark"] .stage-content .dashboard-alert-row span { color: #f0f5f2; font-size: .86rem; }
+[data-theme="dark"] .stage-content .dashboard-alert-row small { color: #b4c2bb; font-size: .8rem; }
 [data-theme="dark"] .stage-content .recent-row,
 [data-theme="dark"] .stage-content .dashboard-recurring-row,
 [data-theme="dark"] .stage-content .report-category-row,
