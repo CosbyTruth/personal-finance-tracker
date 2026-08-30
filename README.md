@@ -26,6 +26,9 @@ relational reporting, mature backup tooling, and read replicas.
   origin validation, security headers, request timeouts, and safe CSV export.
 - A deployment-aware client data layer that supports same-origin web hosting or a
   separately hosted API for Capacitor builds.
+- A full Expo mobile client with registration, account and transaction management,
+  budgets, goals, recurring cash flow, insights, reports, alerts, reminders, and
+  release build profiles.
 
 See ARCHITECTURE.md for the ledger model, write lifecycle, scale plan, and
 operational decisions.
@@ -57,6 +60,10 @@ production origin in APP_ORIGINS when the API is hosted separately.
 For Capacitor, compile with VITE_API_BASE_URL set to the deployed HTTPS API, add
 the Capacitor origin to APP_ORIGINS, and use COOKIE_SAME_SITE=none with
 COOKIE_SECURE=true.
+
+For Expo, set EXPO_PUBLIC_API_URL to the deployed HTTPS API before creating a
+preview or production build. Run npm run mobile:check and
+npm run mobile:export:android before handing the app to EAS Build.
 
 ## Important data rules
 

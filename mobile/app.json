@@ -3,6 +3,7 @@
     "name": "Kora Money",
     "slug": "kora-money",
     "version": "0.1.0",
+    "icon": "./assets/kora-icon.png",
     "orientation": "portrait",
     "scheme": "koramoney",
     "userInterfaceStyle": "automatic",
@@ -12,18 +13,42 @@
     },
     "android": {
       "package": "com.koramoney.app",
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/kora-icon.png",
+        "backgroundColor": "#126B3B"
+      }
     },
     "web": {
       "output": "static"
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-notifications",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/kora-icon.png",
+          "imageWidth": 136,
+          "resizeMode": "contain",
+          "backgroundColor": "#F4F7F5",
+          "dark": {
+            "backgroundColor": "#08110D"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "90920ba8-931e-41e5-84e6-8661432c2f3e"
+      }
+    },
+    "owner": "cobbyyyytruth"
   }
 }

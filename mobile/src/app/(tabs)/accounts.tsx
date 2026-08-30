@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
-import { RefreshControl, StyleSheet, Text, View } from 'react-native'
+import { router, useFocusEffect } from 'expo-router'
+import { useCallback, useState } from 'react'
+import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import { AccountRow } from '@/components/money'
 import { Screen } from '@/components/screen'
-import { Card, EmptyState, ErrorState, LoadingState, PageHeading, SectionTitle } from '@/components/ui'
+import { Card, EmptyState, ErrorState, IconButton, LoadingState, PageHeading, SectionTitle } from '@/components/ui'
 import { spacing } from '@/constants/theme'
 import { useAuth } from '@/context/auth-context'
 import { useTheme } from '@/context/theme-context'
@@ -22,15 +23,16 @@ export default function AccountsScreen() {
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load accounts.') }
     finally { setLoading(false); setRefreshing(false) }
   }, [token])
-  useEffect(() => { void load() }, [load])
+  useFocusEffect(useCallback(() => { void load() }, [load]))
 
   return <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.primary} />}>
-    <PageHeading eyebrow="ACCOUNTS" title="Every balance, together." subtitle="A simple view across cash, bank, mobile money and savings." />
+    <PageHeading eyebrow="ACCOUNTS" title="Every balance, together." subtitle="A simple view across cash, bank, mobile money and savings." action={<IconButton icon="add" label="Add account" onPress={() => router.push('/account/new')} />} />
     {loading ? <LoadingState /> : error ? <ErrorState message={error} retry={() => void load()} /> : data ? <>
       <View style={styles.balances}>{data.balances.map((item) => <Card key={item.currency}><Text style={[styles.currency, { color: colors.textMuted }]}>{item.currency} total</Text><Text style={[styles.balance, { color: colors.text }]}>{formatMoney(item.balance, item.currency)}</Text></Card>)}</View>
       <SectionTitle detail={`${data.activeCount} active`}>Your accounts</SectionTitle>
-      <View style={styles.list}>{data.accounts.filter((item) => !item.is_archived).map((item) => <AccountRow key={item.id} account={item} />)}</View>
-      {!data.activeCount ? <EmptyState icon="wallet-outline" title="No active accounts" message="Create your first account on the web app; mobile creation is coming in the next slice." /> : null}
+      <View style={styles.list}>{data.accounts.filter((item) => !item.is_archived).map((item) => <Pressable key={item.id} onPress={() => router.push({ pathname: '/account/new', params: { id: String(item.id) } })} style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}><AccountRow account={item} /></Pressable>)}</View>
+      {!data.activeCount ? <EmptyState icon="wallet-outline" title="No active accounts" message="Tap the plus button above to create your first account." /> : null}
+      {data.archivedCount ? <><SectionTitle detail={`${data.archivedCount}`}>Archived</SectionTitle><View style={styles.list}>{data.accounts.filter((item) => item.is_archived).map((item) => <Pressable key={item.id} onPress={() => router.push({ pathname: '/account/new', params: { id: String(item.id) } })} style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}><View style={{ opacity: 0.72 }}><AccountRow account={item} /></View></Pressable>)}</View></> : null}
     </> : null}
   </Screen>
 }

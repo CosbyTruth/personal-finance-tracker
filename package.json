@@ -18,8 +18,12 @@
     "preview": "vite preview",
     "start": "node server/server.js",
     "mobile:start": "npm --prefix mobile start",
+    "mobile:start:dev-client": "npm --prefix mobile run start:dev-client",
     "mobile:android": "npm --prefix mobile run android",
     "mobile:check": "npm --prefix mobile run check",
+    "mobile:export:android": "npm --prefix mobile run export:android",
+    "mobile:build:development:android": "npm --prefix mobile run build:development:android",
+    "mobile:build:preview:android": "npm --prefix mobile run build:preview:android",
     "deploy:check": "npm run env:check && npm run db:check && npm run db:migrate:check && npm run check"
   },
   "dependencies": {
